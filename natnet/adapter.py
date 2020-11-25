@@ -1,7 +1,4 @@
-﻿import struct
-
-from typing import List
-from natnet.protocol import Protocol, LabeledMarker, RigidBody, Skeleton, TimeInfo, Version
+﻿from natnet.protocol import Protocol, UIntValue, ShortValue, UShortValue
 
 # Client/server message ids
 NAT_PING = 0
@@ -22,43 +19,63 @@ TYPE_RIGID_BODY = 1
 TYPE_SKELETON = 2
 
 
-class MotionListener:
-    def on_version(self, version: Version):
+class MotionListener(object):
+    def on_version(self, version):
         """
         Callback for NatNet version query.
-        :param version: tuple Version('major', 'minor', 'build', 'revision').
+        Args:
+             version (:class:`Version`): Motion Server version ['major', 'minor', 'build', 'revision'].
         """
         pass
 
-    def on_rigid_body(self, bodies: List[RigidBody], time_info: TimeInfo):
-        """Callback for NatNet rigid body update. It is called once per frame.
-        :param bodies: a list of RigidBody elements, each with id, Position and Rotation
-        :param time_info: time as a TimeInfo element
+    def on_rigid_body(self, bodies, time_info):
+        """
+        Callback for NatNet rigid bodies update. It is called once per frame.
+        Args:
+            bodies (list[:class:`RigidBody`]): a list of RigidBody elements, each with id, Position and Rotation
+            time_info (:class:`TimeInfo`): time as a TimeInfo element
         """
         pass
 
-    def on_skeletons(self, skeletons: List[Skeleton], time_info: TimeInfo):
+    def on_skeletons(self, skeletons, time_info):
         """
-        Callback for NatNet skeleton update. It is called once per frame.
-        :param skeletons: a list of Skeletons elements, each with id, and a list of Markers
-        :param time_info: time as a TimeInfo element
+        Callback for NatNet skeletons update. It is called once per frame.
+
+        Args:
+            skeletons (list[:class:`Skeleton`]) a list of Skeletons elements, each with id, and a list of RigidBodies
+            time_info (:class:`TimeInfo`): time as a TimeInfo element
         """
         pass
 
-    def on_labeled_markers(self, markers: List[LabeledMarker], time_info: TimeInfo):
+    def on_labeled_markers(self, markers, time_info):
         """
         Callback for NatNet labeled markers update. It is called once per frame.
-        :param markers: a list of LabeledMarker elements, each with id, and Position
-        :param time_info: time as a TimeInfo element
+
+        Args:
+            markers (list[:class:`LabeledMarker`]): a list of LabeledMarker elements, each with id, and Position
+            time_info (:class:`TimeInfo`): time as a TimeInfo element
         """
         pass
 
-    def on_unlabeled_marker(self, marker):
+    def on_unlabeled_markers(self, markers, time_info):
+        """
+        Callback for NatNet unlabeled markers update. It is called once per frame.
+
+        Args:
+            markers (list[:class:`Position`]): a list of Position elements of unlabeled marker
+            time_info (:class:`TimeInfo`): time as a TimeInfo element
+        """
         pass
 
 
-class Adapter:
-    def __init__(self, listener: MotionListener):
+class Adapter(object):
+    def __init__(self, listener):
+        """
+        Converts NatNet payload into python elements.
+
+        Args:
+             listener (:class:`MotionListener`): a listener invoked by new data frames
+        """
         self._listener = listener or MotionListener()
         self._protocol = Protocol()
 
@@ -70,10 +87,10 @@ class Adapter:
         data = memoryview(data)
         offset = 0
 
-        # Frame number (4 bytes)
-        frame_number = self._protocol.read_int(data, offset)
-        offset += 4
-        print(f'Frame #: {frame_number}')
+        # Frame number
+        shift, frame_number = self._protocol.read_value(data, offset, UIntValue)
+        offset += shift
+        print('Frame #: {}'.format(frame_number))
 
         # Marker sets
         shift, marker_sets = self._protocol.unpack_marker_sets(data[offset:])
@@ -82,43 +99,40 @@ class Adapter:
         # Unlabeled markers
         shift, unlabeled_markers = self._protocol.unpack_positions(data[offset:])
         offset += shift
-        print(f'Unlabeled Markers Count: {len(unlabeled_markers)}')
 
         # Rigid bodies
         shift, rigid_bodies = self._protocol.unpack_rigid_bodies(data[offset:])
         offset += shift
-        print(f'Rigid Body Count: {rigid_bodies}')
 
         # Skeletons (Version 2.1 and later)
         shift, skeletons = self._protocol.unpack_skeletons(data[offset:])
         offset += shift
-        print(f'Skeleton Count: {len(skeletons)}')
 
         # Labeled markers (Version 2.3 and later)
         shift, labeled_markers = self._protocol.unpack_labeled_markers(data[offset:])
         offset += shift
-        print(f'Labeled Marker Count: {labeled_markers}')
 
         # Force Plate data (version 2.9 and later)
         shift, force_plates = self._protocol.unpack_force_plates(data[offset:])
         offset += shift
-        print(f'Force Plate Count: {force_plates}')
+        if force_plates:
+            print('Force Plate Count: {}'.format(force_plates))
 
         # Device data (version 2.11 and later) - same structure as Force Plates
         shift, devices = self._protocol.unpack_force_plates(data[offset:])
         offset += shift
-        print(f'Device Count: {devices}')
+        if devices:
+            print('Device Count: {}'.format(devices))
 
         # Time information
         shift, time_info = self._protocol.unpack_time_info(data[offset:])
         offset += shift
-        print(f'Time: {time_info.timestamp}')
 
         # Frame parameters
-        param, = struct.unpack('h', data[offset:offset + 2])
+        shift, param = self._protocol.read_value(data, offset, ShortValue)
+        offset += shift
         is_recording = (param & 0x01) != 0
         tracked_models_changed = (param & 0x02) != 0
-        offset += 2
 
         # Send rigid body to listener
         self._listener.on_rigid_body(rigid_bodies, time_info)
@@ -129,15 +143,18 @@ class Adapter:
         # Send labeled markers to listener
         self._listener.on_labeled_markers(labeled_markers, time_info)
 
+        # Send unlabeled markers to listener
+        self._listener.on_unlabeled_markers(unlabeled_markers, time_info)
+
     # Unpack a data description packet
     def _unpack_description(self, data):
         offset = 0
-        items = self._protocol.read_int(data, offset)
-        offset += 4
+        shift, items = self._protocol.read_value(data, offset, UIntValue)
+        offset += shift
 
         for i in range(0, items):
-            description_type = self._protocol.read_int(data, offset)
-            offset += 4
+            shift, description_type = self._protocol.read_value(data, offset, UIntValue)
+            offset += shift
             if description_type == TYPE_MARKERS:
                 offset += self._protocol.unpack_marker_set_description(data[offset:])
             elif description_type == TYPE_RIGID_BODY:
@@ -147,12 +164,14 @@ class Adapter:
 
     def process_message(self, data):
         print("Begin Packet\n------------\n")
+        offset = 0
+        shift, message_id = self._protocol.read_value(data, offset, UShortValue)
+        offset += shift
+        print('Message ID: {}'.format(message_id))
 
-        message_id = int.from_bytes(data[0:2], byteorder='little')
-        print(f'Message ID: {message_id}')
-
-        packet_size = int.from_bytes(data[2:4], byteorder='little')
-        print(f'Packet Size: {packet_size}')
+        shift, packet_size = self._protocol.read_value(data, offset, UShortValue)
+        print('Packet Size: {}'.format(packet_size))
+        offset += shift
 
         offset = 4
         if message_id == NAT_FRAME_OF_DATA:
@@ -164,18 +183,17 @@ class Adapter:
             self._listener.on_version(version)
         elif message_id == NAT_RESPONSE:
             if packet_size == 4:
-                command_response = self._protocol.read_int(data, offset)
-                offset += 4
+                shift, command_response = self._protocol.read_value(data, offset, UIntValue)
+                offset += shift
             else:
-                message, separator, remainder = bytes(data[offset:]).partition(b'\0')
-                offset += len(message) + 1
-                print(f'Command response: {message.decode("utf-8")}')
+                shift, message = self._protocol.read_string(data, offset)
+                offset += shift
+                print('Command response: {}'.format(message))
         elif message_id == NAT_UNRECOGNIZED_REQUEST:
             print("Received 'Unrecognized request' from server")
         elif message_id == NAT_MESSAGE_STRING:
-            message, separator, remainder = bytes(data[offset:]).partition(b'\0')
-            offset += len(message) + 1
-            print(f'Received message from server: {message.decode("utf-8")}')
+            shift, message = self._protocol.read_string(data, offset)
+            print('Received message from server: {}'.format(message))
         else:
             print("ERROR: Unrecognized packet type")
 

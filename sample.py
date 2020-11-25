@@ -1,9 +1,6 @@
 ﻿import time
-from typing import List
 
-from natnet.adapter import MotionListener
-from natnet.protocol import RigidBody, Skeleton, TimeInfo
-from natnet.motion_client import MotionClient
+from natnet import MotionListener, MotionClient
 
 
 class Listener(MotionListener):
@@ -11,22 +8,22 @@ class Listener(MotionListener):
     A class of callback functions that are invoked with information from NatNet server.
     """
     def __init__(self):
-        super().__init__()
+        super(Listener, self).__init__()
 
     def on_version(self, version):
-        print(f'Version {version}')
+        print('Version {}'.format(version))
 
-    def on_rigid_body(self, bodies: List[RigidBody], time_info: TimeInfo):
-        print(f'Rigid body {bodies}')
+    def on_rigid_body(self, bodies, time_info):
+        print('RigidBodies {}'.format(bodies))
 
-    def on_skeletons(self, skeletons: List[Skeleton], time_info: TimeInfo):
-        print(f'Labeled marker {skeletons}')
+    def on_skeletons(self, skeletons, time_info):
+        print('Skeletons {}'.format(skeletons))
 
-    def on_labeled_markers(self, markers, time_info: TimeInfo):
-        print(f'Labeled marker {markers}')
+    def on_labeled_markers(self, markers, time_info):
+        print('Labeled marker {}'.format(markers))
 
-    def on_unlabeled_marker(self, marker):
-        print(f'Unlabeled marker {marker}')
+    def on_unlabeled_markers(self, markers, time_info):
+        print('Unlabeled marker {}'.format(markers))
 
 
 if __name__ == "__main__":

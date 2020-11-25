@@ -1,7 +1,7 @@
 ﻿import socket
 from threading import Thread
 
-from natnet.adapter import Adapter, MotionListener
+from natnet.adapter import Adapter
 
 # Change this value to the IP address of the NatNet server.
 IP_SERVER = '127.0.0.1'
@@ -22,8 +22,8 @@ PORT_DATA = 1511
 SIZE_BUFFER = 32768
 
 
-class MotionClient:
-    def __init__(self, listener: MotionListener, ip_server=IP_SERVER, ip_local=IP_LOCAL,
+class MotionClient(object):
+    def __init__(self, listener, ip_server=IP_SERVER, ip_local=IP_LOCAL,
                  ip_multicast=IP_MULTICAST, port_command=PORT_COMMAND, port_data=PORT_DATA):
 
         self._server_ip = ip_server
@@ -44,9 +44,16 @@ class MotionClient:
         self._adapter = Adapter(listener)
 
     def get_data(self):
+        """
+        Start streaming motion capture data.
+        Data frames are delivered to `MotionListener` until `MotionClient.disconnect()` is called.
+        """
         self._send_command(self._adapter.get_data())
 
     def get_version(self):
+        """
+        Request software version details from the Motion Server.
+        """
         self._send_command(self._adapter.get_version())
 
     def get_descriptors(self):
@@ -56,9 +63,7 @@ class MotionClient:
         self._send_command(self._adapter.get_nat(command_string))
 
     def connect(self):
-        """
-        Connect to NatNet server
-        """
+        """ Connect to NatNet server """
         if self._is_running:
             return
 
@@ -81,27 +86,29 @@ class MotionClient:
         self._command_thread.start()
 
     def disconnect(self):
-        """
-        Disconnect from NatNet server
-        """
+        """ Disconnect from NatNet server """
         if not self._is_running:
             return
-
         self._is_running = False
+        self._close_sockets()
 
+    def _close_sockets(self):
         # Close data socket
         if self._data_socket:
             try:
                 self._data_socket.close()
             except socket.error as err:
-                print(f'Closing data socket failed {err}')
+                print('Closing data socket failed {}'.format(err))
+        self._data_socket = None
 
         # Close command socket
         if self._command_socket:
             try:
                 self._command_socket.close()
             except socket.error as err:
-                print(f'Closing command socket failed {err}')
+                print('Closing command socket failed {}'.format(err))
+
+        self._command_socket = None
 
     # Create a data socket (UDP) to attach to the NatNet stream
     def _create_data_socket(self, port):
@@ -138,10 +145,4 @@ class MotionClient:
         self._command_socket.sendto(data, address)
 
     def __del__(self):
-        self._is_running = False
-        if self._command_socket:
-            self._command_socket.close()
-            self._command_socket = None
-        if self._data_socket:
-            self._data_socket.close()
-            self._data_socket = None
+        self._close_sockets()
