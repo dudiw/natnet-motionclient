@@ -71,8 +71,8 @@ class MotionClient(object):
         self._data_socket = self._create_data_socket(self._data_port)
         self._command_socket = self._create_command_socket()
         if not self._data_socket or not self._command_socket:
-            print("Could not open command/data channel")
-            self.disconnect()
+            print('Could not open command/data channel')
+            self._close_sockets()
             return
 
         self._is_running = True

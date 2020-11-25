@@ -45,7 +45,7 @@ class TestListener(MotionListener):
         print('Time: {}'.format(time_info.timestamp))
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     listener = TestListener()
     adapter = Adapter(listener)
 

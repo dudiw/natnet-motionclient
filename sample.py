@@ -26,7 +26,7 @@ class Listener(MotionListener):
         print('Unlabeled marker {}'.format(markers))
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     # Create listener
     listener = Listener()
 

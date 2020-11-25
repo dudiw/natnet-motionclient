@@ -81,7 +81,7 @@ class Adapter(object):
 
     # Unpack data from a motion capture frame message
     def _unpack_motion_capture(self, data):
-        print("Begin MoCap Frame\n-----------------\n")
+        print('Begin MoCap Frame\n-----------------\n')
 
         # access the internal buffers of an object
         data = memoryview(data)
@@ -163,7 +163,7 @@ class Adapter(object):
                 offset += self._protocol.unpack_skeleton_description(data[offset:])
 
     def process_message(self, data):
-        print("Begin Packet\n------------\n")
+        print('Begin Packet\n------------\n')
         offset = 0
         shift, message_id = self._protocol.read_value(data, offset, UShortValue)
         offset += shift
@@ -173,7 +173,6 @@ class Adapter(object):
         print('Packet Size: {}'.format(packet_size))
         offset += shift
 
-        offset = 4
         if message_id == NAT_FRAME_OF_DATA:
             self._unpack_motion_capture(data[offset:])
         elif message_id == NAT_MODEL_DEF:
@@ -195,9 +194,9 @@ class Adapter(object):
             shift, message = self._protocol.read_string(data, offset)
             print('Received message from server: {}'.format(message))
         else:
-            print("ERROR: Unrecognized packet type")
+            print('ERROR: Unrecognized packet type')
 
-        print("End Packet\n----------\n")
+        print('End Packet\n----------\n')
 
     def get_version(self):
         command_string = 'Ping'
