@@ -42,7 +42,7 @@ if __name__ == "__main__":
     # Read version (optional)
     client.get_version()
 
-    # The client continuously reads data until client.stop() is called
+    # The client continuously reads data until client.disconnect() is called
     time.sleep(5)
 
     # Stops data stream and disconnects the client

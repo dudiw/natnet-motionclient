@@ -8,6 +8,7 @@ PATH_DATA = 'data'
 
 PATH_FRAME = 'frame_packet_v3.bin'
 PATH_VERSION = 'version_packet_v3.bin'
+PATH_MODEL = 'model_def_packet_v3.bin'
 
 
 class TestListener(MotionListener):
@@ -44,4 +45,8 @@ if __name__ == "__main__":
     # Test version payload
     version = open(os.path.join(PATH_DATA, PATH_VERSION), 'rb').read()
     adapter.process_message(version)
+
+    # Test model definitions payload
+    models = open(os.path.join(PATH_DATA, PATH_MODEL), 'rb').read()
+    adapter.process_message(models)
 

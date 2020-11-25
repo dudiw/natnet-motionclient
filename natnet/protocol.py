@@ -1,13 +1,16 @@
 ﻿import struct
+from collections import namedtuple
 from typing import List, Tuple, NamedTuple, Dict
 
-# Create structs for reading various object types to speed up parsing.
+# Structs object types
 Vector3 = struct.Struct('<fff')
 Quaternion = struct.Struct('<ffff')
 FloatValue = struct.Struct('<f')
 DoubleValue = struct.Struct('<d')
-VERSION = 'BBBB'
 ENDIANNESS = 'little'
+VERSION = 'BBBB'
+
+Version = namedtuple('Version', 'major, minor, build, revision')
 
 
 class Position(NamedTuple):
@@ -337,10 +340,11 @@ class Protocol:
 
         return offset
 
-    def unpack_version(self, data):
+    def unpack_version(self, data) -> Version:
         offset = 256  # Skip sender Name field
         offset += 4   # Skip sender Version info
-        return struct.unpack(VERSION, data[offset:offset + 4])
+        values = struct.unpack(VERSION, data[offset:offset + 4])
+        return Version(*values)
 
     def get_request_payload(self, command, command_string, packet_size):
         data = command.to_bytes(2, byteorder='little')

@@ -1,7 +1,7 @@
 ﻿import struct
 
 from typing import List
-from natnet.protocol import Protocol, LabeledMarker, RigidBody, Skeleton, TimeInfo
+from natnet.protocol import Protocol, LabeledMarker, RigidBody, Skeleton, TimeInfo, Version
 
 # Client/server message ids
 NAT_PING = 0
@@ -23,10 +23,10 @@ TYPE_SKELETON = 2
 
 
 class MotionListener:
-    def on_version(self, version: tuple):
+    def on_version(self, version: Version):
         """
         Callback for NatNet version query.
-        :param version: (str) Version tuple ('major', 'minor', 'build', 'revision').
+        :param version: tuple Version('major', 'minor', 'build', 'revision').
         """
         pass
 
