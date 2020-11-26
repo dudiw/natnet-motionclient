@@ -12,5 +12,5 @@ Stream live motion capture (rigid bodies, markers, skeletons, etc) over a networ
 
 -----
 
-See [documentation](https://github.com/dudiw/natnet-motionclient/wiki/Usage) for usage 
+See [documentation](https://github.com/dudiw/natnet-motionclient/wiki) for usage 
 and `sample.py` for a full example (Note: NatNet server / Motive is required for live data).
