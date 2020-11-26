@@ -110,8 +110,12 @@ class MotionClient(object):
 
         self._command_socket = None
 
-    # Create a data socket (UDP) to attach to the NatNet stream
     def _create_data_socket(self, port):
+        """ Create a data socket (UDP) to attach to the NatNet stream """
+
+        # TODO: check data socket creation issues:
+        #  https://github.com/ricardodeazambuja/OptiTrackPython/blob/master/OptiTrackPython.py
+
         value = socket.inet_aton(self._multicast_ip) + socket.inet_aton(self._local_ip)
 
         result = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
