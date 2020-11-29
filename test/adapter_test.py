@@ -1,5 +1,8 @@
 import os
 
+import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from natnet import MotionListener
 from natnet.adapter import Adapter
 
@@ -49,14 +52,16 @@ if __name__ == '__main__':
     listener = TestListener()
     adapter = Adapter(listener)
 
+    root = os.path.dirname(__file__)
+
     # Test frame payload
-    frame = open(os.path.join(PATH_DATA, PATH_FRAME), 'rb').read()
+    frame = open(os.path.join(root, PATH_DATA, PATH_FRAME), 'rb').read()
     adapter.process_message(frame)
 
     # Test version payload
-    version = open(os.path.join(PATH_DATA, PATH_VERSION), 'rb').read()
+    version = open(os.path.join(root, PATH_DATA, PATH_VERSION), 'rb').read()
     adapter.process_message(version)
 
     # Test model definitions payload
-    models = open(os.path.join(PATH_DATA, PATH_MODEL), 'rb').read()
+    models = open(os.path.join(root, PATH_DATA, PATH_MODEL), 'rb').read()
     adapter.process_message(models)
