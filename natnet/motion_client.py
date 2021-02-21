@@ -1,4 +1,5 @@
 ﻿import socket
+import struct
 from threading import Thread
 
 from natnet.adapter import Adapter
@@ -10,7 +11,7 @@ IP_SERVER = '127.0.0.1'
 IP_LOCAL = '127.0.0.1'
 
 # This should match the multicast address listed in Motive's streaming settings.
-IP_MULTICAST = '239.255.42.99'
+IP_MULTICAST = '239.255.255.250'
 
 # NatNet Command channel
 PORT_COMMAND = 1510
@@ -116,32 +117,33 @@ class MotionClient(object):
         # TODO: check data socket creation issues:
         #  https://github.com/ricardodeazambuja/OptiTrackPython/blob/master/OptiTrackPython.py
 
-        value = socket.inet_aton(self._multicast_ip) + socket.inet_aton(self._local_ip)
+        socket_data = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+        socket_data.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
-        result = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-        result.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        result.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, value)
-        result.bind((self._local_ip, port))
-        return result
+        group = socket.inet_aton(self._multicast_ip)
+        value = struct.pack('4sL', group, socket.INADDR_ANY)
+        socket_data.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, value)
+        socket_data.bind(('', port))
+        return socket_data
 
     # Create a command socket to attach to the NatNet stream
     def _create_command_socket(self):
-        result = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        result.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        result.bind(('', 0))
-        result.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-        return result
+        socket_command = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        socket_command.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        socket_command.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        socket_command.bind(('', 0))
+        return socket_command
 
     def _data_callback(self, data_socket):
         """Continuously receive and process messages."""
         try:
             while self._is_running:
                 # Blocking network call
-                data, addr = data_socket.recv(SIZE_BUFFER)
+                data = data_socket.recv(SIZE_BUFFER)
                 if len(data):
                     self._adapter.process_message(data)
-        except (KeyboardInterrupt, SystemExit):
-            print('Exiting')
+        except (KeyboardInterrupt, SystemExit, OSError):
+            print('Exiting data socket')
 
     def _send_command(self, data):
         self.connect()
