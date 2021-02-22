@@ -2,6 +2,7 @@ import socket
 import struct
 import time
 import os
+import argparse
 
 # Multicast address
 MULTICAST_ADDRESS = '239.255.255.250'
@@ -48,14 +49,22 @@ class Server(object):
         self._socket.sendto(frame, address)
 
 
+HINT_MULTICAST = 'The multicast IP.'
+HINT_INTERVAL = 'The interval between messages, in seconds.'
+
 if __name__ == '__main__':
     # Mock data frame
     root = os.path.dirname(__file__)
     frame = open(os.path.join(root, 'data', 'frame_packet_v3.bin'), 'rb').read()
 
+    parser = argparse.ArgumentParser(description='Mock server that broadcasts test frames.')
+    parser.add_argument('--multicast', type=str, default=MULTICAST_ADDRESS, help=HINT_MULTICAST)
+    parser.add_argument('--interval', type=float, default=INTERVAL, help=HINT_INTERVAL)
+    args = parser.parse_args()
+
     # Mock server
-    server = Server(MULTICAST_ADDRESS)
+    server = Server(args.multicast)
 
     while True:
         server.send_frame(frame)
-        time.sleep(INTERVAL)
+        time.sleep(args.interval)
