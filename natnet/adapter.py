@@ -1,4 +1,7 @@
-﻿from natnet.protocol import Protocol, UIntValue, ShortValue, UShortValue
+﻿import struct
+import traceback
+
+from natnet.protocol import Protocol, UIntValue, ShortValue, UShortValue
 
 # Client/server message ids
 NAT_PING = 0
@@ -163,6 +166,13 @@ class Adapter(object):
                 offset += self._protocol.unpack_skeleton_description(data[offset:])
 
     def process_message(self, data):
+        try:
+            self._process_message_safe(data)
+        except struct.error:
+            # Avoid crashing because of one bad packet
+            print('NatNetClient struct error: {}'.format(traceback.format_exc()))
+
+    def _process_message_safe(self, data):
         print('Begin Packet\n------------\n')
         offset = 0
         shift, message_id = self._protocol.read_value(data, offset, UShortValue)
@@ -212,3 +222,6 @@ class Adapter(object):
 
     def get_descriptors(self):
         return self._protocol.get_request_payload(NAT_REQUEST_MODEL_DEF, '', 0)
+
+    def get_disconnect(self):
+        return self._protocol.get_request_payload(NAT_DISCONNECT, '', 0)

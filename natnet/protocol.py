@@ -563,9 +563,8 @@ class Protocol(object):
         return Version(*values)
 
     def get_request_payload(self, command, command_string, packet_size):
-        data = command.to_bytes(2, byteorder='little')
-        data += packet_size.to_bytes(2, byteorder='little')
-
+        data = UShortValue.pack(command)
+        data += UShortValue.pack(packet_size)
         data += command_string.encode('utf-8')
         data += b'\0'
         return data

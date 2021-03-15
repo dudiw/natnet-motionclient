@@ -8,7 +8,7 @@ import argparse
 MULTICAST_ADDRESS = '239.255.255.250'
 
 # Broadcast interval in seconds. Use 0.01 for 10ms intervals (100 Hz)
-INTERVAL = 10
+INTERVAL = 5
 
 
 class Server(object):
@@ -38,6 +38,9 @@ class Server(object):
         self._multicast_address = multicast_address or MULTICAST_ADDRESS
         self._data_port = data_port
         self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+
+        self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
 
         # Set the time-to-live for messages to 1 so they do not go past the local network segment.
@@ -66,5 +69,6 @@ if __name__ == '__main__':
     server = Server(args.multicast)
 
     while True:
+        print('broadcast')
         server.send_frame(frame)
         time.sleep(args.interval)
