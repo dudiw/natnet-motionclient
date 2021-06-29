@@ -7,7 +7,7 @@ from natnet.adapter import Adapter
 IP_LOCAL = '127.0.0.1'
 
 # Multicast address matching the multicast address listed in Motive streaming settings.
-IP_MULTICAST = '239.255.255.250'
+IP_MULTICAST = '239.255.42.99'
 
 # NatNet Data channel
 PORT_DATA = 1511
@@ -48,8 +48,9 @@ class MotionClient(object):
         port_command (int): NatNet Command channel.
     """
     def __init__(self, listener, ip_local, ip_multicast=IP_MULTICAST, port_data=PORT_DATA,
-                 ip_server=IP_SERVER, port_command=PORT_COMMAND):
+                 ip_server=IP_SERVER, port_command=PORT_COMMAND, verbose=False):
 
+        self._verbose = verbose
         self._local_ip = ip_local
         self._multicast_ip = ip_multicast
         self._data_port = port_data
@@ -61,9 +62,9 @@ class MotionClient(object):
         self._command_socket = None
         self._command_thread = None
 
-        self._is_running = False
+        self._adapter = Adapter(listener, verbose)
 
-        self._adapter = Adapter(listener)
+        self._is_running = False
 
     def get_data(self):
         """
@@ -84,129 +85,216 @@ class MotionClient(object):
     def get_nat(self, command_string):
         self._send_command(self._adapter.get_nat(command_string))
 
-    def connect(self):
+    def _connect(self):
         """ Connect to NatNet server """
         if self._is_running:
             return
 
-        # Create the command and data sockets
-        self._data_socket = self._create_data_socket(self._data_port)
-        if not self._data_socket:
-            print('Could not open data channel')
-            return
-
-        self._command_socket = self._create_command_socket()
-        if not self._command_socket:
-            print('Could not open command channel')
-            self._close_socket(self._data_socket)
-            return
-
-        self._is_running = True
-
-        # Create a separate thread for receiving data packets
-        self._data_thread = Thread(target=self._data_callback, args=(self._data_socket,))
+        # Create thread for receiving motion capture data
+        self._data_thread = DataThread(self._adapter, self._local_ip, self._multicast_ip, self._data_port)
+        self._data_thread.daemon = True
         self._data_thread.start()
 
-        # Create a separate thread for receiving command packets
-        self._command_thread = Thread(target=self._data_callback, args=(self._command_socket,))
+        # Create thread for sending commands and receiving result
+        self._command_thread = CommandThread(self._adapter, self._server_ip, self._command_port)
+        self._command_thread.daemon = True
         self._command_thread.start()
+
+        self._is_running = True
 
     def disconnect(self):
         """ Disconnect from NatNet server. """
         if self._is_running:
             self._is_running = False
-            self._data_thread.join()
 
-            self._send_command(self._adapter.get_disconnect())
-            self._command_thread.join()
-
-    def _create_command_socket(self):
-        """ Create a command socket to attach to the NatNet stream. """
-        socket_command = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        socket_command.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        socket_command.bind(('', 0))
-        socket_command.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-        socket_command.setblocking(True)
-        return socket_command
+            self._data_thread.stop()
+            self._command_thread.stop()
 
     def _send_command(self, data):
-        self.connect()
-        address = (self._server_ip, self._command_port)
-        self._command_socket.sendto(data, address)
+        self._connect()
+        self._command_thread.send(data)
 
-    def _create_data_socket(self, port):
-        """ Create a data socket (UDP) to attach to the NatNet stream. """
+    def _print(self, message):
+        if self._verbose:
+            print(message)
 
-        # TODO: check data socket creation issues:
-        #  https://github.com/ricardodeazambuja/OptiTrackPython/blob/master/OptiTrackPython.py
-        #  https://github.com/paparazzi/paparazzi/blob/master/sw/ground_segment/python/natnet3.x/NatNetClient.py
+    def __del__(self):
+        self.disconnect()
 
-        # create UDP socket
-        socket_data = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-        try:
-            socket_data.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        except AttributeError:
-            pass
 
-        socket_data.bind((self._multicast_ip, port))
+# TODO: check data socket creation issues:
+#  https://github.com/ricardodeazambuja/OptiTrackPython/blob/master/OptiTrackPython.py
+#  https://github.com/paparazzi/paparazzi/blob/master/sw/ground_segment/python/natnet3.x/NatNetClient.py
+class DataThread(Thread):
 
-        client_ip = self._local_ip or socket.gethostbyname(socket.gethostname())
+    TIMEOUT = 0.2
 
-        client = socket.inet_aton(client_ip)
-        membership = socket.inet_aton(self._multicast_ip) + client
-        socket_data.setsockopt(socket.SOL_IP, socket.IP_MULTICAST_IF, client)
-        socket_data.setsockopt(socket.SOL_IP, socket.IP_ADD_MEMBERSHIP, membership)
-        return socket_data
+    def __init__(self, adapter, local_ip, multicast_ip, port):
+        Thread.__init__(self)
 
-    def _data_callback(self, data_socket, timeout=0.1):
+        self._adapter = adapter
+        self._socket = None
+        self._multicast_ip = multicast_ip
+        self._local_ip = local_ip
+        self._port = port
+        self._is_running = False
+
+    def run(self):
         """ Continuously receive and process messages. """
+        self._create_data_socket()
 
-        self._clear_buffer(data_socket)
+        self._is_running = True
+
+        # self._clear_buffer(data_socket)
 
         # prevent recv from block indefinitely
-        data_socket.settimeout(timeout)
+        self._socket.settimeout(DataThread.TIMEOUT)
 
         while self._is_running:
             try:
-                data = data_socket.recv(SIZE_BUFFER)
+                data = self._socket.recv(SIZE_BUFFER)
                 if len(data):
                     self._adapter.process_message(data)
             except (KeyboardInterrupt, SystemExit, OSError):
                 print('Exiting data socket')
 
             except socket.timeout:
-                print('NatNetClient socket timeout!')
+                print('NatNetClient data socket timeout!')
                 continue
 
-        self._close_socket(data_socket)
+        self._close_socket()
+
+    def _create_data_socket(self):
+        """ Create a data socket (UDP) to attach to the NatNet stream. """
+        self._close_socket()
+
+        # create UDP socket
+        self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+
+        try:
+            self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        except AttributeError:
+            pass
+
+        membership = socket.inet_aton(self._multicast_ip) + socket.inet_aton(self._local_ip)
+        self._socket.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, membership)
+        self._socket.bind((self._local_ip, self._port))
+        return self._socket
 
     def _clear_buffer(self, data_socket):
         """ Clear pending messages from receiving buffer """
 
         # attempt to read a 1 byte length messages without blocking.
         # recv throws an exception as it fails to receive data from the cleared buffer
+        data_socket.setblocking(False)
         while True:
             try:
-                data_socket.recv(1, socket.MSG_DONTWAIT)
+                data_socket.recv(1)
             except IOError:
                 break
+        data_socket.setblocking(True)
 
-    def _close_socket(self, data_socket):
-        if not data_socket:
+    def stop(self, timeout=0.1):
+        self._is_running = False
+        self._close_socket()
+        self.join(timeout)
+
+    def _close_socket(self):
+        if not self._socket:
             return
 
         # drop membership
         try:
             membership = socket.inet_aton(self._multicast_ip) + socket.inet_aton('0.0.0.0')
-            data_socket.setsockopt(socket.SOL_IP, socket.IP_DROP_MEMBERSHIP, membership)
+            self._socket.setsockopt(socket.SOL_IP, socket.IP_DROP_MEMBERSHIP, membership)
         except socket.error:
             pass
 
         # close socket
         try:
-            data_socket.close()
+            self._socket.close()
         except socket.error as err:
             print('Closing socket failed {}'.format(err))
 
-    def __del__(self):
-        self.disconnect()
+
+class CommandThread(Thread):
+
+    TIMEOUT = 0.2
+
+    def __init__(self, adapter, server_ip, port):
+        Thread.__init__(self)
+        self._adapter = adapter
+        self._socket = None
+        self._server_ip = server_ip
+        self._port = port
+
+        self._is_running = False
+
+    def send(self, data):
+        address = (self._server_ip, self._port)
+        self._create_command_socket()
+        self._socket.sendto(data, address)
+
+    def run(self):
+        """ Continuously receive and process messages. """
+        self._create_command_socket()
+
+        self._is_running = True
+
+        # self._clear_buffer(data_socket)
+
+        # prevent recv from block indefinitely
+        self._socket.settimeout(DataThread.TIMEOUT)
+
+        while self._is_running:
+            try:
+                data = self._socket.recv(SIZE_BUFFER)
+                if len(data):
+                    self._adapter.process_message(data)
+            except (KeyboardInterrupt, SystemExit, OSError):
+                print('Exiting data socket')
+
+            except socket.timeout:
+                print('NatNetClient command socket timeout!')
+                continue
+
+        self._close_socket()
+
+    def _create_command_socket(self):
+        """ Create a command socket to attach to the NatNet stream. """
+        self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._socket.bind(('', 0))
+        self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        self._socket.setblocking(True)
+        return self._socket
+
+    def _clear_buffer(self, data_socket):
+        """ Clear pending messages from receiving buffer """
+
+        # attempt to read a 1 byte length messages without blocking.
+        # recv throws an exception as it fails to receive data from the cleared buffer
+        data_socket.setblocking(False)
+        while True:
+            try:
+                data_socket.recv(1)
+            except IOError:
+                break
+        data_socket.setblocking(True)
+
+    def stop(self, timeout=0.1):
+        self.send(self._adapter.get_disconnect())
+
+        self._is_running = False
+        self._close_socket()
+        self.join(timeout)
+
+    def _close_socket(self):
+        if not self._socket:
+            return
+
+        # close socket
+        try:
+            self._socket.close()
+        except socket.error as err:
+            print('Closing socket failed {}'.format(err))

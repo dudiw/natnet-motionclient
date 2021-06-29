@@ -1,4 +1,5 @@
-﻿import struct
+﻿import math
+import struct
 
 # Structs object types
 ShortValue = struct.Struct('<h')
@@ -42,13 +43,15 @@ class Position(object):
         y (float):
         z (float):
     """
+    MESSAGE = '{x: {:.2f}, y: {:.2f}, z: {:.2f}}'
+
     def __init__(self, x, y, z):
         self.x = x
         self.y = y
         self.z = z
 
     def __repr__(self):
-        return 'Position(x={}, y={}, z={})'.format(self.x, self.y, self.z)
+        return Position.MESSAGE.format(self.x, self.y, self.z)
 
 
 class Rotation(object):
@@ -61,6 +64,9 @@ class Rotation(object):
         y (float):
         z (float):
     """
+
+    MESSAGE = '{w: {:.2f}, x: {:.2f}, y: {:.2f}, z: {:.2f}}'
+
     def __init__(self, w, x, y, z):
         self.w = w
         self.x = x
@@ -68,7 +74,7 @@ class Rotation(object):
         self.z = z
 
     def __repr__(self):
-        return 'Rotation(w={}, x={}, y={}, z={})'.format(self.w, self.x, self.y, self.z)
+        return Rotation.MESSAGE.format(self.w, self.x, self.y, self.z)
 
 
 class LabeledMarker(object):
@@ -108,17 +114,43 @@ class RigidBody(object):
     Rigid Body element with id, position and rotation
 
     Attributes:
-        body_id (int): the marker set name
+        body_id (int): the rigid body unique id
         position (:class:`Position`): the rigid body position
         rotation (:class:`Rotation`): the rigid body rotation
     """
+
+    MESSAGE = '{\n\tbody_id: {},\n\tposition: {},\n\theading: {:.2f}\n}'
+
     def __init__(self, body_id, position, rotation):
         self.body_id = body_id
         self.position = position
         self.rotation = rotation
 
+    def get_heading(self):
+        if not self.rotation:
+            return None
+        dcm_0_0 = 1.0 - 2.0 * (self.rotation[1] * self.rotation[1] + self.rotation[2] * self.rotation[2])
+        dcm_1_0 = 2.0 * (self.rotation[0] * self.rotation[1] - self.rotation[3] * self.rotation[2])
+        return math.degrees(math.atan2(dcm_1_0, dcm_0_0))
+
     def __repr__(self):
-        return 'RigidBody(body_id={}, position={}, rotation={})'.format(self.body_id, self.position, self.rotation)
+        return RigidBody.MESSAGE.format(self.body_id, self.position, self.get_heading())
+
+
+class RigidBodyDescriptor(object):
+    """
+    Rigid Body Descriptor element with id and name
+
+    Attributes:
+        body_id (int): the rigid body unique id
+        name (str): the rigid body name
+    """
+
+    MESSAGE = '{\n\tbody_id: {},\n\tname: {}\n}'
+
+    def __init__(self, body_id, name):
+        self.body_id = body_id
+        self.name = name
 
 
 class Skeleton(object):
@@ -181,6 +213,16 @@ class TimeInfo(object):
 
 
 class Protocol(object):
+
+    def __init__(self, verbose):
+        """
+        Parses NatNet payload into python elements.
+
+        Args:
+             verbose (bool): True for verbose logging
+        """
+        self._verbose = verbose
+
     def read_string(self, data, offset):
         """
         Unpack a null-terminated string field.
@@ -263,13 +305,13 @@ class Protocol(object):
         # Version 2 and later
         shift, marker_error = self.read_value(data, offset, FloatValue)
         offset += shift
-        print('Marker Error: {}'.format(marker_error))
+        self._print('Marker Error: {}'.format(marker_error))
 
         # Version 2.6 and later
         shift, param = self.read_value(data, offset, ShortValue)
         offset += shift
         tracking_valid = (param & 0x01) != 0
-        print('Tracking Valid: {}'.format(tracking_valid))
+        self._print('Tracking Valid: {}'.format(tracking_valid))
 
         rigid_body = RigidBody(body_id, position, rotation)
 
@@ -289,7 +331,7 @@ class Protocol(object):
         shift, rigid_body_count = self.read_value(data, offset, UIntValue)
         offset += shift
 
-        rigid_bodies = list()
+        rigid_bodies = []
         for i in range(0, rigid_body_count):
             shift, rigid_body = self._unpack_rigid_body(data[offset:])
             rigid_bodies.append(rigid_body)
@@ -311,7 +353,7 @@ class Protocol(object):
 
         shift, skeleton_id = self.read_value(data, offset, UIntValue)
         offset += shift
-        print('ID {}'.format(skeleton_id))
+        self._print('ID {}'.format(skeleton_id))
 
         shift, bodies = self.unpack_rigid_bodies(data[offset:])
         offset += shift
@@ -331,7 +373,7 @@ class Protocol(object):
         offset = 0
         shift, skeleton_count = self.read_value(data, offset, UIntValue)
         offset += shift
-        print('Skeleton Count: {}'.format(skeleton_count))
+        self._print('Skeleton Count: {}'.format(skeleton_count))
 
         skeletons = []
         for i in range(0, skeleton_count):
@@ -354,7 +396,7 @@ class Protocol(object):
         offset = 0
         shift, marker_set_count = self.read_value(data, offset, UIntValue)
         offset += shift
-        print('Marker Set Count: {}'.format(marker_set_count))
+        self._print('Marker Set Count: {}'.format(marker_set_count))
 
         marker_sets = []
 
@@ -362,7 +404,7 @@ class Protocol(object):
             # Model name
             shift, model_name = self.read_string(data, offset)
             offset += shift
-            print('Model Name: {}'.format(model_name))
+            self._print('Model Name: {}'.format(model_name))
 
             shift, positions = self.unpack_positions(data[offset:])
             marker_sets.append(MarkerSet(model_name, positions))
@@ -484,7 +526,7 @@ class Protocol(object):
 
         shift, name = self.read_string(data, offset)
         offset += shift
-        print('Marker set Name: {}'.format(name))
+        self._print('Marker set Name: {}'.format(name))
 
         shift, marker_count = self.read_value(data, offset, IntValue)
         offset += shift
@@ -492,7 +534,7 @@ class Protocol(object):
         for i in range(0, marker_count):
             shift, name = self.read_string(data, offset)
             offset += shift
-            print('\tMarker Name: {}'.format(name))
+            self._print('\tMarker Name: {}'.format(name))
 
         return offset
 
@@ -503,7 +545,7 @@ class Protocol(object):
         # Version 2.0 or higher
         shift, name = self.read_string(data, offset)
         offset += shift
-        print('\tRigidBody Name: {}'.format(name))
+        self._print('\tRigidBody Name: {}'.format(name))
 
         shift, rigid_id = self.read_value(data, offset, IntValue)
         offset += shift
@@ -517,7 +559,7 @@ class Protocol(object):
         # Version 3.0 and higher, rigid body marker information contained in description
         shift, marker_count = self.read_value(data, offset, UIntValue)
         offset += shift
-        print('\tRigidBody Marker Count: {}'.format(marker_count))
+        self._print('\tRigidBody Marker Count: {}'.format(marker_count))
 
         marker_count_range = range(0, marker_count)
         for marker in marker_count_range:
@@ -527,7 +569,9 @@ class Protocol(object):
             shift, active_label = self.read_value(data, offset, UIntValue)
             offset += shift
 
-        return offset
+        descriptor = RigidBodyDescriptor(rigid_id, name)
+
+        return offset, descriptor
 
     # Unpack a skeleton description packet
     def unpack_skeleton_description(self, data):
@@ -535,7 +579,7 @@ class Protocol(object):
 
         shift, name = self.read_string(data, offset)
         offset += shift
-        print('Marker Name: {}'.format(name))
+        self._print('Marker Name: {}'.format(name))
 
         shift, skeleton_id = self.read_value(data, offset, IntValue)
         offset += shift
@@ -543,10 +587,13 @@ class Protocol(object):
         shift, rigid_body_count = self.read_value(data, offset, IntValue)
         offset += shift
 
+        descriptors = []
         for i in range(0, rigid_body_count):
-            offset += self.unpack_rigid_body_description(data[offset:])
+            shift, descriptor = self.unpack_rigid_body_description(data[offset:])
+            descriptors.append(descriptor)
+            offset += shift
 
-        return offset
+        return offset, descriptors
 
     def unpack_version(self, data):
         """
@@ -568,3 +615,7 @@ class Protocol(object):
         data += command_string.encode('utf-8')
         data += b'\0'
         return data
+
+    def _print(self, message):
+        if self._verbose:
+            print(message)

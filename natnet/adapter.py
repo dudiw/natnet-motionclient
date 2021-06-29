@@ -70,21 +70,31 @@ class MotionListener(object):
         """
         pass
 
+    def on_rigid_body_descriptors(self, descriptors):
+        """
+        Callback for NatNet rigid body descriptors update. It is called once per server request.
+        Args:
+            descriptors (list[:class:`RigidBodyDescriptor`]): a list of RigidBodyDescriptor elements, each with id and name
+        """
+        pass
+
 
 class Adapter(object):
-    def __init__(self, listener):
+    def __init__(self, listener, verbose):
         """
         Converts NatNet payload into python elements.
 
         Args:
              listener (:class:`MotionListener`): a listener invoked by new data frames
+             verbose (bool): True for verbose logging
         """
         self._listener = listener or MotionListener()
-        self._protocol = Protocol()
+        self._protocol = Protocol(verbose)
+        self._verbose = verbose
 
     # Unpack data from a motion capture frame message
     def _unpack_motion_capture(self, data):
-        print('Begin MoCap Frame\n-----------------\n')
+        self._print('Begin MoCap Frame\n-----------------\n')
 
         # access the internal buffers of an object
         data = memoryview(data)
@@ -93,7 +103,7 @@ class Adapter(object):
         # Frame number
         shift, frame_number = self._protocol.read_value(data, offset, UIntValue)
         offset += shift
-        print('Frame #: {}'.format(frame_number))
+        self._print('Frame #: {}'.format(frame_number))
 
         # Marker sets
         shift, marker_sets = self._protocol.unpack_marker_sets(data[offset:])
@@ -119,13 +129,13 @@ class Adapter(object):
         shift, force_plates = self._protocol.unpack_force_plates(data[offset:])
         offset += shift
         if force_plates:
-            print('Force Plate Count: {}'.format(force_plates))
+            self._print('Force Plate Count: {}'.format(force_plates))
 
         # Device data (version 2.11 and later) - same structure as Force Plates
         shift, devices = self._protocol.unpack_force_plates(data[offset:])
         offset += shift
         if devices:
-            print('Device Count: {}'.format(devices))
+            self._print('Device Count: {}'.format(devices))
 
         # Time information
         shift, time_info = self._protocol.unpack_time_info(data[offset:])
@@ -155,32 +165,40 @@ class Adapter(object):
         shift, items = self._protocol.read_value(data, offset, UIntValue)
         offset += shift
 
+        rigid_body_descriptors = []
         for i in range(0, items):
             shift, description_type = self._protocol.read_value(data, offset, UIntValue)
             offset += shift
             if description_type == TYPE_MARKERS:
-                offset += self._protocol.unpack_marker_set_description(data[offset:])
+                shift, descriptor = self._protocol.unpack_marker_set_description(data[offset:])
+                offset += shift
             elif description_type == TYPE_RIGID_BODY:
-                offset += self._protocol.unpack_rigid_body_description(data[offset:])
+                shift, descriptor = self._protocol.unpack_rigid_body_description(data[offset:])
+                rigid_body_descriptors.append(descriptor)
+                offset += shift
             elif description_type == TYPE_SKELETON:
-                offset += self._protocol.unpack_skeleton_description(data[offset:])
+                shift, descriptor = self._protocol.unpack_skeleton_description(data[offset:])
+                offset += shift
+
+        # Send rigid body to listener
+        self._listener.on_rigid_body_descriptors(rigid_body_descriptors)
 
     def process_message(self, data):
         try:
             self._process_message_safe(data)
         except struct.error:
             # Avoid crashing because of one bad packet
-            print('NatNetClient struct error: {}'.format(traceback.format_exc()))
+            self._print('NatNetClient struct error: {}'.format(traceback.format_exc()))
 
     def _process_message_safe(self, data):
-        print('Begin Packet\n------------\n')
+        self._print('Begin Packet\n------------\n')
         offset = 0
         shift, message_id = self._protocol.read_value(data, offset, UShortValue)
         offset += shift
-        print('Message ID: {}'.format(message_id))
+        self._print('Message ID: {}'.format(message_id))
 
         shift, packet_size = self._protocol.read_value(data, offset, UShortValue)
-        print('Packet Size: {}'.format(packet_size))
+        self._print('Packet Size: {}'.format(packet_size))
         offset += shift
 
         if message_id == NAT_FRAME_OF_DATA:
@@ -197,16 +215,16 @@ class Adapter(object):
             else:
                 shift, message = self._protocol.read_string(data, offset)
                 offset += shift
-                print('Command response: {}'.format(message))
+                self._print('Command response: {}'.format(message))
         elif message_id == NAT_UNRECOGNIZED_REQUEST:
-            print("Received 'Unrecognized request' from server")
+            self._print("Received 'Unrecognized request' from server")
         elif message_id == NAT_MESSAGE_STRING:
             shift, message = self._protocol.read_string(data, offset)
-            print('Received message from server: {}'.format(message))
+            self._print('Received message from server: {}'.format(message))
         else:
-            print('ERROR: Unrecognized packet type')
+            self._print('ERROR: Unrecognized packet type')
 
-        print('End Packet\n----------\n')
+        self._print('End Packet\n----------\n')
 
     def get_version(self):
         command_string = 'Ping'
@@ -225,3 +243,7 @@ class Adapter(object):
 
     def get_disconnect(self):
         return self._protocol.get_request_payload(NAT_DISCONNECT, '', 0)
+
+    def _print(self, message):
+        if self._verbose:
+            print(message)
