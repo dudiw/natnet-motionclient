@@ -18,6 +18,6 @@ and `sample.py` for a full example
 
 <div align="left">
       <a href="https://drive.google.com/file/d/1BkmrF1ghErAeJsdPr0v6X_t-Yczlzsit/view?usp=sharing" target="_blank" rel="noopener">
-         <img src="https://storage.googleapis.com/macro-fence-2015.appspot.com/natnet_preview.jpg" style="width:100%;height:100%">
+         <img src="https://storage.googleapis.com/macro-fence-2015.appspot.com/lab/natnet_preview.jpg" style="width:100%;height:100%">
       </a>
 </div>
